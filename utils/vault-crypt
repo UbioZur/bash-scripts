@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+
+## ---------------------------------------
+##  _   _ _     _        ______
+## | | | | |   (_)      |___  /
+## | | | | |__  _  ___     / / _   _ _ __
+## | | | | '_ \| |/ _ \   / / | | | | '__|
+## | |_| | |_) | | (_) |./ /__| |_| | |
+##  \___/|_.__/|_|\___/ \_____/\__,_|_|
+## 
+##   UbioZur / ubiozur.tk
+##        https://git.ubiozur.tk
+##
+## ---------------------------------------
+
+## ---------------------------------------
+##
+## Script name : vault-crypt
+## Description : Securely archive or install SSH and GPG configurations files.
+## Dependencies: openssl, tar, hostname, loglib.sh, utilslib.sh
+## Repository  : https://github.com/UbioZur/bash-scripts
+## License     : https://github.com/UbioZur/bash-scripts/LICENSE
+##
+## ---------------------------------------
+
+## ---------------------------------------
+##   Fail Fast and cleanup
+## E: any trap on ERR is inherited by shell functions, 
+##    command substitutions, and commands executed in a subshell environment.
+## e: Exit immediately if a pipeline returns a non-zero status.
+## u: Treat unset variables and parameters other than the special parameters ‘@’ or ‘*’ 
+##    as an error when performing parameter expansion
+## o pipefail: If set, the return value of a pipeline is the value of the last (rightmost) 
+##             command to exit with a non-zero status, or zero if all commands in the
+##             pipeline exit successfully.
+## ---------------------------------------
+set -Eeuo pipefail
+
+# Get the script file path and directory.
+readonly _SCRIPT_DIR="$( dirname "$(readlink -f "${BASH_SOURCE}")" )"
+
+# Get the program name
+readonly _PROG="$( basename $0 )"
+
+# Source my loglib library if used
+source "${_SCRIPT_DIR}/../lib/loglib.sh"
+# Source my utils library if used
+source "${_SCRIPT_DIR}/../lib/utilslib.sh"
+
+# Flag to set the encryption/Decryption mode
+DECRYPT_MODE=0
+# Flag to set to do the SSH configs
+DOSSH=0
+# Flag to set to do the GPG configs
+DOGPG=0
+
+# Get the SSH directory.
+readonly SSH_DIR="${SSHHOME-"${XDG_DATA_HOME-"$HOME/.local/share"}/ssh"}"
+# Get the GPG directory
+readonly GPG_DIR="${GNUPGHOME-"${XDG_DATA_HOME-"$HOME/.local/share"}/gnupg"}"
+
+# File to decrypt
+DECRYPT_FILE=""
+
+## ---------------------------------------
+##   Script main function
+## Usage: main "$@"
+## ---------------------------------------
+function main {
+    # Initialization
+    parse_params "$@"
+    # Initialize the loglib if it's included!
+    _loglib_init
+
+    # Decrypt mode
+    if [[ $DECRYPT_MODE = 1 ]]; then
+        [[ $DOSSH = 1 && $DOGPG = 1 ]] && _die "Cannot decrypt SSH and GPG at the same time!"
+        [[ -z $DECRYPT_FILE ]] && _die "Decrypting '-d' require the file name as argument!"
+        [[ ! -f $DECRYPT_FILE ]] && _die "Not a file: '$DECRYPT_FILE'!"
+        
+        [[ $DOSSH = 1 ]] && decrypt_ssh
+        [[ $DOGPG = 1 ]] && decrypt_gpg
+        return
+    fi
+
+    # Encrypt mode, check we are in ssh and/or gpg mode
+    if [[ $DOSSH = 0 && $DOGPG = 0 ]]; then
+        _log err "In encrypt mode, you MUST select ssh and/or gpg mode!"
+        usage
+    fi
+
+    [[ $DOSSH = 1 ]] && encrypt_ssh
+    [[ $DOGPG = 1 ]] && encrypt_gpg
+}
+
+## ---------------------------------------
+##   Display the usage/help for the script
+## Usage: usage
+## ---------------------------------------
+function usage {
+    # TODO create your help here
+    cat << EOF # remove the space between << and EOF, this is due to web plugin issue
+Usage        : $_PROG [-h]
+Usage Encrypt: $_PROG [-v] [--no-color] [-s] [-g]
+Usage Decrypt: $_PROG [-v] [--no-color] [-s | -g] [ -d VAULT_FILE.tar.gz ]
+
+Securely archive or install SSH and GPG configurations files.
+
+Available options:
+
+    -h, --help          FLAG, Print this help and exit
+    -v, --verbose       FLAG, Print script debug info
+
+Log options:
+
+    --no-color          FLAG, Remove style and colors from output.
+    -q, --quiet         FLAG, Non error logs are not output to stderr.
+
+Vault Options:
+
+    -d, --decrypt       PARAM, Decrypt the given tar file and install it depending on -s or -g
+    -s, --ssh           FLAG, Process SSH Files
+    -g, --gpg           FLAG, Process GNUPG Files
+
+EOF
+    exit
+}
+
+## ---------------------------------------
+##   Parse the script parameters and set the Flags
+## Usage: parse_params "$@"
+## ---------------------------------------
+function parse_params {
+    # default values of variables set from params
+    flag=0
+    param=''
+
+    while :; do
+        case "${1-}" in
+            # --------------------------
+            #   Common Flags
+            # --------------------------
+            -h | --help) usage ;;
+            -v | --verbose) set -x ;;
+
+            # --------------------------
+            #   Log Library flags
+            # --------------------------
+            --no-color) NO_COLOR=1 ;;
+            -q | --quiet) LOG_QUIET=1 ;;
+            
+            # --------------------------
+            #   Encrypt/Decrypts
+            # --------------------------
+            -s | --ssh) DOSSH=1 ;;
+            -g | --gpg) DOGPG=1 ;;
+            -d | --decrypt) DECRYPT_MODE=1
+                            DECRYPT_FILE="${2-}"
+                            shift ;;
+
+            # die is part of utilslib
+            -?*) _die "Unknown option: $1" ;;
+            *) break ;;
+        esac
+        shift
+    done
+
+    return 0
+}
+
+
+## ---------------------------------------
+##   Decrypt SSH archive
+## Usage: decrypt_ssh
+## ---------------------------------------
+function decrypt_ssh {
+    _log sec "Decrypting SSH vault archive and installing it"
+
+    mkdir -p "$SSH_DIR"
+    openssl enc -d -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -in "$DECRYPT_FILE" | tar -xz -C "$SSH_DIR/"
+    chmod -R 700 "$SSH_DIR"
+
+    _log suc "SSH config Installed: '$SSH_DIR/'"
+}
+
+## ---------------------------------------
+##   Encrypt SSH archive
+## Usage: encrypt_ssh
+## ---------------------------------------
+function encrypt_ssh {
+    [[ ! -d "$SSH_DIR" ]] && _die "'$SSH_DIR' is not a directory. Operation aborted!"
+
+    local -r vaultname="$( hostname )-ssh.tar.gz"
+
+    _log sec "Archiving and encrypting SSH configs"
+
+    tar -czf - -C "$SSH_DIR/" . | openssl enc -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -e -salt -out "$vaultname"
+
+    _log suc "SSH vault created: '$( pwd )/$vaultname'"
+}
+
+## ---------------------------------------
+##   Decrypt GPG archive
+## Usage: decrypt_gpg
+## ---------------------------------------
+function decrypt_gpg {
+    _log sec "Decrypting GPG vault archive and installing it"
+
+    mkdir -p "$GPG_DIR"
+    openssl enc -d -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -in "$DECRYPT_FILE" | tar -xz -C "$GPG_DIR/"
+    chmod -R 700 "$GPG_DIR"
+
+    _log suc "GPG config Installed: '$GPG_DIR/'"
+}
+
+## ---------------------------------------
+##   Encrypt GPG archive
+## Usage: encrypt_gpg
+## ---------------------------------------
+function encrypt_gpg {
+    [[ ! -d "$GPG_DIR" ]] && _die "'$GPG_DIR' is not a directory. Operation aborted!"
+
+    local -r vaultname="$( hostname )-gpg.tar.gz"
+
+    _log sec "Archiving and encrypting GPG configs"
+
+    tar -czf - -C "$GPG_DIR/" . | openssl enc -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -e -salt -out "$vaultname"
+
+    _log suc "GPG vault created: '$( pwd )/$vaultname'"
+}
+
+main "$@"; exit
