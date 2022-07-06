@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+## ---------------------------------------
+##  _   _ _     _        ______
+## | | | | |   (_)      |___  /
+## | | | | |__  _  ___     / / _   _ _ __
+## | | | | '_ \| |/ _ \   / / | | | | '__|
+## | |_| | |_) | | (_) |./ /__| |_| | |
+##  \___/|_.__/|_|\___/ \_____/\__,_|_|
+## 
+##   UbioZur / ubiozur.tk
+##        https://git.ubiozur.tk
+##
+## ---------------------------------------
+
+## ---------------------------------------
+##
+## Script name : Rofi Brave Web Applications
+## Description : A Rofi list of Website to open as applications mode on brave.
+## Dependencies: rofi, loglib.sh, utilslib.sh
+## Repository  : https://github.com/UbioZur/bash-scripts
+## License     : https://github.com/UbioZur/bash-scripts/LICENSE
+##
+## ---------------------------------------
+
+## ---------------------------------------
+##   Fail Fast and cleanup
+## E: any trap on ERR is inherited by shell functions, 
+##    command substitutions, and commands executed in a subshell environment.
+## e: Exit immediately if a pipeline returns a non-zero status.
+## u: Treat unset variables and parameters other than the special parameters ‘@’ or ‘*’ 
+##    as an error when performing parameter expansion
+## o pipefail: If set, the return value of a pipeline is the value of the last (rightmost) 
+##             command to exit with a non-zero status, or zero if all commands in the
+##             pipeline exit successfully.
+## ---------------------------------------
+set -Eeuo pipefail
+
+# Get the script file path and directory.
+readonly _SCRIPT_DIR="$( dirname "$(readlink -f "${BASH_SOURCE}")" )"
+
+# Get the program name
+readonly _PROG="$( basename $0 )"
+
+# Source my loglib library if used
+source "${_SCRIPT_DIR}/../lib/loglib.sh"
+# Source my utils library if used
+source "${_SCRIPT_DIR}/../lib/utilslib.sh"
+
+# The application commandline
+readonly WEB_BROWSER="brave-browser"
+readonly APP_CMD="${WEB_BROWSER} --app="
+
+# The list of websites to run as applications
+readonly WEB_APPS="Netflix;https://www.netflix.com/
+                    Portainer;http://localhost:9000/
+                    Skype;https://web.skype.com/
+                    Tutanota;https://mail.tutanota.com/
+                    WhatsApp;https://web.whatsapp.com/"
+
+## ---------------------------------------
+##   Script main function
+## Usage: main "$@"
+## ---------------------------------------
+function main {
+    # Initialization
+    parse_params "$@"
+    # Initialize the loglib
+    _loglib_init
+
+    [[ ! -x "$( which rofi )" ]] && _die "Couldn't find Rofi as an executable!"
+    [[ ! -x "$( which $WEB_BROWSER)" ]] && _die "Couldn't find the web browser '$WEB_BROWSER'!"
+
+    # Display the list of websites apps to rofi
+    result="$( echo "$WEB_APPS" | awk -F';' '{ gsub (" ", "", $0); print $1}' | sort | rofi -dmenu -p "" -no-custom -no-fixed-num-lines )"
+    
+    # if rofi exit with code 1 (nothing selected), quit (shoudl be handled with the set -e)
+    [[ ! $? = 0 ]] && exit 1 
+    
+    readonly url="$( echo "$WEB_APPS" | grep "$result" | awk -F';' '{ gsub (" ", "", $0); print $2}' )"
+    _log log "App: ${result-}"
+    _log log "URL: ${url-}"
+    
+    $APP_CMD$url
+}
+
+## ---------------------------------------
+##   Display the usage/help for the script
+## Usage: usage
+## ---------------------------------------
+function usage {
+    cat << EOF # remove the space between << and EOF, this is due to web plugin issue
+Usage:  $_PROG [-h]
+        $_PROG [-l]
+        $_PROG [-v] [--no-color] [-q]
+
+A Rofi list of Website to open as applications mode on brave.
+
+Available options:
+
+    -h, --help          FLAG, Print this help and exit
+    -v, --verbose       FLAG, Print script debug info
+
+Log options:
+
+    --no-color          FLAG, Remove style and colors from output
+    -q, --quiet         FLAG, Non error logs are not output to stderr
+
+Script options:
+
+    -l, --list          FLAG, Print the list of web applications and exit
+
+EOF
+    exit
+}
+
+## ---------------------------------------
+##   Parse the script parameters and set the Flags
+## Usage: parse_params "$@"
+## ---------------------------------------
+function parse_params {
+    # default values of variables set from params
+    flag=0
+    param=''
+
+    while :; do
+        case "${1-}" in
+            # --------------------------
+            #   Common Flags
+            # --------------------------
+            -h | --help) usage ;;
+            -v | --verbose) set -x ;;
+
+            # --------------------------
+            #   Log Library flags
+            # --------------------------
+            --no-color) NO_COLOR=1 ;;
+            -q | --quiet) LOG_QUIET=1 ;;
+            
+            # --------------------------
+            #   Script flags
+            # --------------------------
+            -l | --list) list ;;
+            
+            # die is part of utilslib
+            -?*) _die "Unknown option: $1" ;;
+            *) break ;;
+        esac
+        shift
+    done
+
+    return 0
+}
+
+## ---------------------------------------
+##   List the availables applications
+## Usage: list
+## ---------------------------------------
+function list {
+    echo "$WEB_APPS" | awk -F';' '{ gsub (" ", "", $0); printf ("%10s\t%s\n", $1, $2)}' | sort
+
+    exit
+}
+
+
+main "$@"; exit

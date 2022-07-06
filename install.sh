@@ -58,8 +58,11 @@ UNINSTALL=0
 ROOT_OK=0
 # Flag to install the utils
 UTILS=1
-# Glag to install the gui utils
+# Flag to install the gui utils
 GUIUTILS=0
+# Flag to install the rofi scripts
+ROFI=0
+
 
 # Script used variables to save the list of folders created (useful for DRY_RUN)
 declare -a _FOLDER_LIST=()
@@ -71,7 +74,7 @@ declare -a _FOLDER_LIST=()
 function main {
     # Initialization
     parse_params "$@"
-    # Initialize the loglib if it's included!
+    # Initialize the loglib
     _loglib_init
 
     # Check if user is root or not
@@ -86,6 +89,7 @@ function main {
 
         [[ $UTILS = 1 ]] && link_each_rm "utils" "$XDG_BIN_HOME"
         [[ $GUIUTILS = 1 ]] && link_each_rm "gui-utils" "$XDG_BIN_HOME"
+        [[ $ROFI = 1 ]] && link_each_rm "rofi" "$XDG_BIN_HOME"
 
         exit
     fi
@@ -97,6 +101,7 @@ function main {
     # Create links
     [[ $UTILS = 1 ]] && link_each "utils" "$XDG_BIN_HOME"
     [[ $GUIUTILS = 1 ]] && link_each "gui-utils" "$XDG_BIN_HOME"
+    [[ $ROFI = 1 ]] && link_each "rofi" "$XDG_BIN_HOME"
 }
 
 ## ---------------------------------------
@@ -105,7 +110,6 @@ function main {
 ## ---------------------------------------
 function cleanup {
     trap - SIGINT SIGTERM ERR EXIT
-    # TODO script cleanup here (clean temp file etc)
     
     cleanup_folders
 }
@@ -118,9 +122,9 @@ function usage {
     cat << EOF # remove the space between << and EOF, this is due to web plugin issue
 Usage:  $_PROG [-h]
         $_PROG [-v] [--dry-run] [--no-color] [-q] [-l] [--log-file /path/to/log [--log-append]] [--root-ok]
-               [-a] [--no-utils] [-g]
+               [-a] [--no-utils] [-g] [-r]
         $_PROG [-v] [--dry-run] [--no-color] [-q] [-l] [--log-file /path/to/log [--log-append]] [--root-ok] [-u]
-               [-a] [--no-utils] [-g]
+               [-a] [--no-utils] [-g] [-r]
 
 Install my bash scripts in the local bin folder
 
@@ -145,6 +149,7 @@ Install options:
     -a, --all           FLAG, Install eveything.
     --no-utils          FLAG, Do not install the utils scripts.
     -g, --gui-utils     FLAG, Install the gui utils.
+    -r, --rofi          FLAG, Install the rofi scripts.
 
 EOF
     exit
@@ -186,9 +191,11 @@ function parse_params {
             # --------------------------
             -u | --uninstall) UNINSTALL=1 ;;
             -a | --all) UTILS=1
-                        GUIUTILS=1 ;;
+                        GUIUTILS=1
+                        ROFI=1 ;;
             --no-utils) UTILS=0 ;;
             -g | --gui-utils) GUIUTILS=1 ;;
+            -r | --rofi) ROFI=1 ;;
 
             # UTILSLIBDO die is part of utilslib
             -?*) _die "Unknown option: $1" ;;
